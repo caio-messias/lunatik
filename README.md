@@ -63,15 +63,14 @@ The result will be a file named linux-image-xx.deb. Install it as a normal packa
 $ dpkg -i linux-image-xx.deb
 ```
 
-Now Lunatik can be used as a normal module. Use 
+Now Lunatik can be used as a normal module. To install it, use 
 ```bash 
 $ sudo modprobe -v lunatik
 ``` 
-to install it and
+and to remove it:
 ```bash
 $ sudo modprobe -r lunatik
 ```
-to remove it
 
 To see if it's currently running, type:
 ```bash
@@ -84,7 +83,7 @@ $ sudo dmesg
 $ sudo journalctl -k
 ```
 
-When Lunatik is loaded, a new driver is also loaded, called luadrv and located in /dev/luadrv. This driver expects lua scripts to execute them in kernel space. If your file is in user space, you can redirect it using
+When Lunatik is loaded, the poc-driver is also loaded, called luadrv in the filesystem and is located in /dev/luadrv. This driver expects lua scripts to execute them in kernel space. If your file is in user space, you can redirect it using
 ```bash
 $ cat script.lua > /dev/luadrv
 ```
@@ -133,6 +132,4 @@ To access an element, you can simply use
 print(rcu.somekey)
 ```
 
-Notice that, in lua code, you don't need to take care of locks and mutexes manually, as these are handled in the C side and that by utilizing RCU we can guarantee that readers will never be blocked and the data will always be accessible.
-
-In the poc-driver/luadev.c file, we define an array of of lua_exec struct. This struct contains a pointer to a script, a lua state where the code will executed and a kthread to allow concurrent execution. The size of this array can also be changed, thus allowing for more states to run code concurrently.
+Notice that, in lua code, you don't need to take care of locks and mutexes manually, as these are handled in the C side and that by utilizing RCU we can guarantee that the data will always be accessible and never corrupted.
