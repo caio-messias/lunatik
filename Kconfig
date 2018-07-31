@@ -1,7 +1,8 @@
+
 config LUNATIK
     tristate "Lunatik"
 
 config LUNATIK_POC
     bool "Use poc driver"
     depends on LUNATIK
-    default y
+default y

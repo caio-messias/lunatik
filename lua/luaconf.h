@@ -863,9 +863,13 @@ static inline int time(void *p)
 #undef current
 #endif
 
-#define abort()			panic("Lua has aborted!")
 #define free 			kfree
-#define realloc(a, b) 		krealloc(a, b, GFP_KERNEL)
+#include <linux/hardirq.h>
+static inline void *realloc(const void *p, size_t new_size)
+{
+	gfp_t flag = in_interrupt() ? GFP_ATOMIC : GFP_KERNEL;
+	return krealloc(p, new_size, flag);
+}
 
 /* signal.h */
 #define l_signalT	lu_byte
