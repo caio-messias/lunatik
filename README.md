@@ -9,7 +9,7 @@ This project creates a Lua binding to RCU for use in Lunatik, allowing Lua data 
 
 ## Installation:
 
-Lunatik is presented as an in-tree kernel module, meaning we'll have to compile our own custom kernel to use it. This source tree contains the Lunatik source, the poc-driver and the RCU Binding. The poc-driver is the driver user to load lua scripts from user space to kernel space and is contained in lunatik/poc-driver. The RCU binding is contained in the lunatik/rcu directory.
+Lunatik is presented as an in-tree kernel module, meaning we'll have to compile our own custom kernel to use it. This source tree contains the Lunatik source, the poc-driver and the RCU Binding. The poc-driver is the driver user to load Lua scripts from user space to kernel space and resides in lunatik/poc-driver. The RCU binding resides in the lunatik/rcu directory.
 
 During the compilation of Lunatik, both the driver and the binding are also compiled and installed. 
 
@@ -30,14 +30,14 @@ Also install:
 $ sudo apt install build-essential libncurses-dev linux-source
 ```
 
-libncurses is a package that allows us to us a gui when configuring the kernel, and linux-source is a debian package that contains the kernel source. This package creates a linux-source-xx.tar.xz (where xx is your running kernel version) in /usr/src. Extract this file.
+libncurses is a package that allows us to us a GUI when configuring the kernel, and linux-source is a debian package that contains the kernel source. This package creates a linux-source-xx.tar.xz (where xx is your running kernel version) in /usr/src. Extract this file.
 ```bash
 $ sudo tar -xf linux-source-xx.tar.xz
 ```
 
 You should now have a directory /usr/src/linux-source-xx.
 
-Now, we have to add the Lunatik files to the kernel source. Download the Lunatik source files (https://github.com/caioluiz/lunatik) and copy it to the linux source drivers directory, located in /usr/src/linux-source-xx/drivers.
+Now, we have to add the Lunatik files to the kernel source. Download the Lunatik source files (https://github.com/caioluiz/lunatik) and copy them to the linux source drivers directory, located in /usr/src/linux-source-xx/drivers.
 
 Edit the Kconfig file located in the drivers directory and add "source lunatik/Kconfig" at the end of it.
 
@@ -49,7 +49,7 @@ $ sudo make menuconfig
 ```
 A gui will appear with various kernel configurations. Go to device drivers options and at the end of that list, find Lunatik and enable it with module support. This will also enable the poc-driver automatically.
 Also go to "Processor type and features", then "Preemption Model" and choose preemptible Kernel.
-A preemptible kernel will allow for multiple lua scripts to execute and interact with the rcu hash table concurrently.
+A preemptible kernel will allow for multiple Lua scripts to execute and interact with the rcu hash table concurrently.
 
 With Lunatik now enabled, we now have to compile the entire kernel. Fortunately, debian offers us a simple and quick approach.
 ```bash
@@ -83,7 +83,7 @@ $ sudo dmesg
 $ sudo journalctl -k
 ```
 
-When Lunatik is loaded, the poc-driver is also loaded, called luadrv in the filesystem and is located in /dev/luadrv. This driver expects lua scripts to execute them in kernel space. If your file is in user space, you can redirect it using
+When Lunatik is loaded, the poc-driver is also loaded, called luadrv in the filesystem and is located in /dev/luadrv. This driver expects Lua scripts to execute them in kernel space. If your file is in user space, you can redirect it using
 ```bash
 $ cat script.lua > /dev/luadrv
 ```
@@ -96,13 +96,11 @@ sudo make modules_install
 ```
 
 ## The RCU Binding:
-The RCU binding developed in this project defines a hash table that can be accessed concurrently. The elements of this table are identified by a unique string key and can hold a value of either an int, a bool or a string. These are the values that will be shared among the lua states.
+The RCU binding developed in this project defines a hash table that can be accessed concurrently. The elements of this table are indexed by a unique string key and can hold a value of either an int, a bool or a string. These are the values types that can be shared among the Lua states.
 
-The hash table is defined using the kernel own macros. This results in an array where each element is the head of a linked list (a bucket). We can change the size of this array of linked lists at compile time, adding more buckets and reducing collisions if needed. Each of these buckets is protected by RCU independently, meaning that each bucket has their own lock, and elements from different buckets can be modified at the same time. RCU allows any number of readers and up to one writer in the same bucket.
+The hash table is defined using the kernel own macros. This results in an array where each element is the head of a linked list (a bucket). We can change the size of this array of linked lists at compile time, adding more buckets and reducing collisions if needed. Each of these buckets is protected by RCU independently, meaning that each bucket has it's own lock, and elements from different buckets can be modified at the same time. RCU allows any number of readers and up to one writer in the same bucket.
 
-The functions of the API were implemented with the LUA-C interface in mind, meaning we can use functions written in C inside lua. 
-
-The binding is exported to lua via a table called "rcu" that implements the __index and __newindex metamethods. This way, the rcu table can be accessed and modified like a normal lua table.
+The binding is exported to Lua via a table called "rcu" that implements the __index and __newindex metamethods. This way, the rcu table can be accessed and modified like a normal Lua table.
 
 The binding also exports a "for_each" function, that applies a function to each element of hash table, without modifying it. RCU allows this operation to be made concurrently with readers. For example, to print all elements present on the table, you can write:
 ```lua
@@ -111,11 +109,11 @@ rcu.for_each(print)
 
 Whenever a element is to be accessed, the __index function will call the internal C function rcu_search_element, and whenever a element is to be added or modified, __newindex will call the appropriate internal functions to add, delete or replace the element.
 
-For example, to add an element to the rcu protected hash table from lua, just write
+For example, to add an element to the rcu protected hash table from Lua, just write
 ```lua
 rcu["somekey"] = some_value
 ```
-Since the keys are strings, we can also use the usual lua dot notation 'table.key' to access an element.
+Since the keys are strings, we can also use the usual Lua dot notation 'table.key' to access an element.
 
 To update:
 ```lua
@@ -132,4 +130,4 @@ To access an element, you can simply use
 print(rcu.somekey)
 ```
 
-Notice that, in lua code, you don't need to take care of locks and mutexes manually, as these are handled in the C side and that by utilizing RCU we can guarantee that the data will always be accessible and never corrupted.
+Notice that, in Lua code, you don't need to take care of locks and mutexes manually, as these are handled in the C side and that by utilizing RCU we can guarantee that the data will always be accessible and never corrupted.
