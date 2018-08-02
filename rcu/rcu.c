@@ -16,7 +16,7 @@ struct tvalue {
     union {
         int i;
         bool b;
-        const char *s;    
+        char *s;    
     };
     int type;
 };
@@ -40,11 +40,11 @@ static bool first_time_setup = true;
 #endif
 
 static unsigned int lua_hash_str(const char *str, size_t l, unsigned int seed) {
-  unsigned int h = seed ^ cast(unsigned int, l);
-  size_t step = (l >> LUAI_HASHLIMIT) + 1;
-  for (; l >= step; l -= step)
-    h ^= ((h<<5) + (h>>2) + cast_byte(str[l - 1]));
-  return h;
+    unsigned int h = seed ^ cast(unsigned int, l);
+    size_t step = (l >> LUAI_HASHLIMIT) + 1;
+    for (; l >= step; l -= step)
+        h ^= ((h<<5) + (h>>2) + cast_byte(str[l - 1]));
+    return h;
 }
 
 #define hash_str(str)               \
@@ -62,21 +62,30 @@ static struct element* rcu_search_element(const char *key, int idx) {
     return NULL;
 }
 
-static int rcu_add_element(lua_State *L, const char *key, struct tvalue value, int idx) {
+static int rcu_add_element(lua_State *L, const char *key, 
+                           struct tvalue value, int idx) {
     struct element *e;    
 
     e = kmalloc(sizeof(struct element), GFP_ATOMIC);
     if (!e) luaL_error(L, "could not allocate memory");
     
-    e->key = kmalloc(strlen(key) +1, GFP_ATOMIC); //+1 also consider a \0
-    if (!e->key) luaL_error(L, "could not allocate memory");
+    // +1 to allocate space for \0 when copying
+    e->key = kmalloc(strlen(key) +1, GFP_ATOMIC);
+    if (!e->key) {    
+        kfree(e);
+        luaL_error(L, "could not allocate memory");
+    }
     strcpy(e->key, key);
     
     e->value.type = value.type;
     switch (e->value.type) {
     case LUA_TSTRING:
         e->value.s = kmalloc(strlen(value.s) +1, GFP_ATOMIC);
-        if (!e->value.s) luaL_error(L, "could not allocate memory");
+        if (!e->value.s) {
+            kfree(e->key);
+            kfree(e);
+            luaL_error(L, "could not allocate memory");
+        }
         strcpy(e->value.s, value.s);
         break;
     case LUA_TNUMBER:
@@ -90,7 +99,7 @@ static int rcu_add_element(lua_State *L, const char *key, struct tvalue value, i
         return 0;
     }
     
-    hlist_add_head_rcu(&e->node, &rcutable[idx]);
+    hlist_add_head_rcu(&e->node, &rcutable[idx]);  
     
     if (value.type == LUA_TSTRING)
         printk("added pair %s - %s to bucket %d", key, value.s, idx);
@@ -100,6 +109,7 @@ static int rcu_add_element(lua_State *L, const char *key, struct tvalue value, i
         else printk("added pair %s - %d to bucket %d", key, value.b, idx);
     }
     
+    spin_unlock(&bucket_lock[idx]);
     return 0;
 }
 
@@ -120,12 +130,16 @@ static int rcu_each(lua_State *L) {
     hash_for_each_rcu(rcutable, bkt, e, node) {
         lua_pushnil(L);
         lua_copy(L, 1, 2);
-        if (e->value.type == LUA_TSTRING)
-            lua_pushstring(L, e->value.s);                  
-        if (e->value.type == LUA_TNUMBER) 
-            lua_pushinteger(L, e->value.i);
-        if (e->value.type == LUA_TBOOLEAN) 
+        switch (e->value.type) {
+        case LUA_TSTRING:
+            lua_pushstring(L, e->value.s); 
+            break;
+        case LUA_TNUMBER:            
+            lua_pushinteger(L, e->value.i); 
+            break;
+        case LUA_TBOOLEAN:
             lua_pushboolean(L, e->value.b);
+        }
         lua_pcall(L, 1, 0, 0);
     }
     rcu_read_unlock();
@@ -150,20 +164,27 @@ static int rcu_delete_element(struct element *e, int idx) {
 }
 
 static int rcu_replace_element(lua_State *L, struct element *e, 
-                                struct tvalue new_value, int idx) {
+                               struct tvalue new_value, int idx) {
     struct element *new_e = NULL;
         
     new_e = kmalloc(sizeof(struct element), GFP_ATOMIC);    
     if (!new_e) luaL_error(L, "could not allocate memory");
     
     new_e->key = kmalloc(strlen(e->key) +1, GFP_ATOMIC);
-    if (!new_e->key) luaL_error(L, "could not allocate memory");
+    if (!new_e->key) {
+        kfree(new_e);
+        luaL_error(L, "could not allocate memory");
+    }
     strcpy(new_e->key, e->key);
     
     switch (new_value.type) {
     case LUA_TSTRING:
         new_e->value.s = kmalloc(strlen(new_value.s) +1, GFP_ATOMIC);    
-        if (!new_e->value.s) luaL_error(L, "could not allocate memory");
+        if (!new_e->value.s) {
+            kfree(new_e->key);
+            kfree(new_e);
+            luaL_error(L, "could not allocate memory");
+        }
         strcpy(new_e->value.s, new_value.s);
         new_e->value.type = LUA_TSTRING;
         break;
@@ -214,12 +235,16 @@ static int rcu_index(lua_State *L) {
     rcu_read_lock();
     e = rcu_search_element(key, idx);
     if (e != NULL) {
-        if (e->value.type == LUA_TSTRING)
-            lua_pushstring(L, e->value.s);                  
-        if (e->value.type == LUA_TNUMBER) 
-            lua_pushinteger(L, e->value.i);                                
-        if (e->value.type == LUA_TBOOLEAN)
-            lua_pushboolean(L, e->value.b);            
+        switch (e->value.type) {
+        case LUA_TSTRING:
+            lua_pushstring(L, e->value.s); 
+            break;
+        case LUA_TNUMBER:            
+            lua_pushinteger(L, e->value.i); 
+            break;
+        case LUA_TBOOLEAN:
+            lua_pushboolean(L, e->value.b);              
+        }
     }
     else lua_pushnil(L);
     rcu_read_unlock();        
@@ -274,7 +299,6 @@ static int rcu_newindex(lua_State *L) {
     
     if (e == NULL && in.type != LUA_TNIL) {
         rcu_add_element(L, key, in, idx);
-        spin_unlock(&bucket_lock[idx]);  
         return 0;
     }
 
@@ -299,7 +323,7 @@ static const struct luaL_Reg rcu_methods[] = {
 };
 
 int luaopen_rcu(lua_State *L) {
-    int i;
+    int i;   
     
     if (first_time_setup) {
         hash_init(rcutable);        
