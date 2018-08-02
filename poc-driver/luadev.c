@@ -21,8 +21,6 @@ MODULE_LICENSE("GPL");
 
 #define raise_err(msg) pr_warn("[lua] %s - %s\n", __func__, msg);
 
-static DEFINE_MUTEX(dev_mtx);
-
 static int major;
 static struct device *luadev;
 static struct class *luaclass;
@@ -111,13 +109,11 @@ static ssize_t dev_read(struct file *f, char *buf, size_t len, loff_t *off)
 {
     const char *msg = "Nothing yet.\n";
     
-    mutex_lock(&dev_mtx);
     if (copy_to_user(buf, msg, len) < 0) {
         raise_err("copy to user failed");
-        mutex_unlock(&dev_mtx);
         return -ECANCELED;
     }
-    mutex_unlock(&dev_mtx);
+
     return strlen(msg) < len ? strlen(msg) : len;
 }
 
@@ -161,7 +157,6 @@ static ssize_t dev_write(struct file *f, const char *buf, size_t len,
     int i;
     char *script = NULL;
 
-    mutex_lock(&dev_mtx);
     script = kmalloc(len, GFP_KERNEL);
     if (script == NULL) {
         raise_err("no memory");
@@ -169,7 +164,6 @@ static ssize_t dev_write(struct file *f, const char *buf, size_t len,
     }
     if (copy_from_user(script, buf, len) < 0) {
         raise_err("copy from user failed");
-        mutex_unlock(&dev_mtx);
         return -ECANCELED;
     }
     script[len-1] = '\0';
@@ -178,13 +172,12 @@ static ssize_t dev_write(struct file *f, const char *buf, size_t len,
         if (mutex_trylock(&lua_states[i].lock)) {
             lua_states[i].script = script;
             lua_states[i].kthread = kthread_run(thread_fn, &lua_states[i], "load2state");
-            mutex_unlock(&dev_mtx);
             return len;
         }
     }
     
-    raise_err("all lua states are busy");
-    mutex_unlock(&dev_mtx);
+    kfree(script);    // We don't have a Lua state to run this script now
+    raise_err("all Lua states are busy");
     return -EBUSY;
 }
 
