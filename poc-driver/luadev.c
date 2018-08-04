@@ -7,6 +7,7 @@
 #include <linux/cdev.h>
 #include <linux/uaccess.h>
 #include <linux/kthread.h>
+#include <asm/atomic.h>
 
 #include <lua/lua.h>
 #include <lua/lualib.h>
@@ -33,7 +34,7 @@ struct lua_exec {
     lua_State *L;
     char *script;    
     struct task_struct *kthread;
-    struct mutex lock; 
+    atomic_t lock; 
 };
 
 static struct lua_exec lua_states[NSTATES];
@@ -89,7 +90,7 @@ static int __init luadrv_init(void)
         
         luaL_openlibs(lua_states[i].L);
         luaL_requiref(lua_states[i].L, "rcu", luaopen_rcu, 1);
-        mutex_init(&lua_states[i].lock);
+        atomic_set(&lua_states[i].lock, 1);
     }
     
     pr_err("major - %d / minor - 1\n", major);
@@ -141,11 +142,11 @@ static int thread_fn(void *arg)
         printk("script error, flushing the state");
         raise_err(lua_tostring(lua->L, -1));
         flush(lua->L);
-        mutex_unlock(&lua->lock);
+        atomic_set(&lua->lock, 1);
         return -ECANCELED;
     }    
     kfree(lua->script);
-    mutex_unlock(&lua->lock);
+    atomic_set(&lua->lock, 1);
         
     printk("thread %d finished", lua->id);
     return 0;
@@ -169,7 +170,7 @@ static ssize_t dev_write(struct file *f, const char *buf, size_t len,
     script[len-1] = '\0';
     
     for (i = 0; i < NSTATES; i++) {
-        if (mutex_trylock(&lua_states[i].lock)) {
+        if (atomic_dec_and_test(&lua_states[i].lock)) {
             lua_states[i].script = script;
             lua_states[i].kthread = kthread_run(thread_fn, &lua_states[i], "load2state");
             return len;
