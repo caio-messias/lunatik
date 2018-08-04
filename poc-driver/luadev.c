@@ -133,8 +133,7 @@ static int flush(lua_State *L)
 
 static int thread_fn(void *arg)
 {
-    struct lua_exec *lua = arg;    
-    set_current_state(TASK_INTERRUPTIBLE);
+    struct lua_exec *lua = arg;
     
     printk("running thread %d", lua->id);
     if (luaL_dostring(lua->L, lua->script)) {
