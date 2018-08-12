@@ -13,7 +13,7 @@ Lunatik is presented as an in-tree kernel module, meaning we'll have to compile 
 
 During the compilation of Lunatik, both the driver and the binding are also compiled and installed. 
 
-This instructions are based on the Debian distro and it is the environment I've used during the GSOC 2018 period.
+This instructions are based on the Debian distro and it is the environment used during the GSOC 2018 period.
 
 First, you'll need to install the linux headers for your running kernel. These files are needed to develop kernel modules. To see which kernel you're running, type:
 ```bash
