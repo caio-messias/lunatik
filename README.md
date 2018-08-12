@@ -5,7 +5,7 @@ Lunatik is a programming environment based on the Lua language for kernel script
 
 The Read-copy-update (RCU) is one of those APIs, made specifically for scenarios where data reading is much more common than writing. RCU allows concurrent readers to access protected data in a non-blocking way even during updates or removals. RCU, as with the rest of the Linux Kernel, is written in C.
 
-This project creates a Lua binding to RCU for use in Lunatik, allowing Lua data to be safely shared, accessed and modified among concurrent Lua states.
+This project, developed during Google Summer of Code 2018, creates a Lua binding to RCU for use in Lunatik, allowing Lua data to be safely shared, accessed and modified among concurrent Lua states.
 
 ## Installation:
 
